@@ -7,8 +7,9 @@
  */
 
 #include "config.h"
-#include "adw-toolbar-view.h"
+#include "adw-toolbar-view-private.h"
 
+#include "adw-focus-mode-private.h"
 #include "adw-gtkbuilder-utils-private.h"
 #include "adw-widget-utils-private.h"
 
@@ -509,6 +510,22 @@ adw_toolbar_view_set_property (GObject      *object,
 }
 
 static void
+adw_toolbar_view_root (GtkWidget *widget)
+{
+  GTK_WIDGET_CLASS (adw_toolbar_view_parent_class)->root (widget);
+
+  adw_focus_mode_add_view (ADW_TOOLBAR_VIEW (widget));
+}
+
+static void
+adw_toolbar_view_unroot (GtkWidget *widget)
+{
+  adw_focus_mode_remove_view (ADW_TOOLBAR_VIEW (widget));
+
+  GTK_WIDGET_CLASS (adw_toolbar_view_parent_class)->unroot (widget);
+}
+
+static void
 adw_toolbar_view_class_init (AdwToolbarViewClass *klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
@@ -523,6 +540,8 @@ adw_toolbar_view_class_init (AdwToolbarViewClass *klass)
   widget_class->size_allocate = adw_toolbar_view_size_allocate;
   widget_class->focus = adw_widget_focus_child;
   widget_class->compute_expand = adw_widget_compute_expand;
+  widget_class->root = adw_toolbar_view_root;
+  widget_class->unroot = adw_toolbar_view_unroot;
 
   /**
    * AdwToolbarView:content:
@@ -1368,4 +1387,24 @@ adw_toolbar_view_get_bottom_bar_height (AdwToolbarView *self)
   g_return_val_if_fail (ADW_IS_TOOLBAR_VIEW (self), 0);
 
   return self->bottom_bar_height;
+}
+
+/*
+ * Whether @self has a visible top bar, revealed or not.
+ */
+gboolean
+adw_toolbar_view_has_top_bars (AdwToolbarView *self)
+{
+  GtkWidget *child;
+
+  g_return_val_if_fail (ADW_IS_TOOLBAR_VIEW (self), FALSE);
+
+  for (child = gtk_widget_get_first_child (self->top_box);
+       child;
+       child = gtk_widget_get_next_sibling (child)) {
+    if (gtk_widget_get_visible (child))
+      return TRUE;
+  }
+
+  return FALSE;
 }

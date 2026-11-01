@@ -66,6 +66,7 @@ test_names = [
   'test-entry-row',
   'test-expander-row',
   'test-flap',
+  'test-focus-mode',
   'test-header-bar',
   'test-inline-view-switcher',
   'test-leaflet',

@@ -303,6 +303,7 @@ libadwaita_private_sources += files([
   'adw-dialog-host.c',
   'adw-fading-label.c',
   'adw-floating-sheet.c',
+  'adw-focus-mode.c',
   'adw-gizmo.c',
   'adw-global-menu.c',
   'adw-gtkbuilder-utils.c',
@@ -387,6 +388,32 @@ else
   libadwaita_private_sources += [
     'adw-settings-impl-portal.c',
   ]
+endif
+
+# MalaysiaDreams focus mode (adw-focus-mode.c): infinity_focus_v1 client code
+# for GTK's Wayland backend. Without it the module builds as a no-op.
+gtk_wayland_dep = dependency('gtk4-wayland', version: gtk_min_version, required: false)
+wayland_client_dep = dependency('wayland-client', required: false)
+wayland_scanner_dep = dependency('wayland-scanner', native: true, required: false)
+
+if gtk_wayland_dep.found() and wayland_client_dep.found() and wayland_scanner_dep.found()
+  wayland_scanner = find_program(wayland_scanner_dep.get_variable(pkgconfig: 'wayland_scanner'))
+  infinity_focus_xml = files('protocols/infinity-focus-v1.xml')
+
+  libadwaita_private_sources += [
+    custom_target('infinity-focus-v1-client-protocol.h',
+       input: infinity_focus_xml,
+      output: 'infinity-focus-v1-client-protocol.h',
+     command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+    ),
+    custom_target('infinity-focus-v1-protocol.c',
+       input: infinity_focus_xml,
+      output: 'infinity-focus-v1-protocol.c',
+     command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+    ),
+  ]
+  libadwaita_deps += [gtk_wayland_dep, wayland_client_dep]
+  config_h.set('HAVE_INFINITY_FOCUS', 1)
 endif
 
 libadwaita_sources = [
