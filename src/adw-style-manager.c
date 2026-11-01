@@ -11,6 +11,7 @@
 #include "adw-style-manager-private.h"
 
 #include "adw-accent-color-private.h"
+#include "adw-live-appearance-private.h"
 #include "adw-main-private.h"
 #include "adw-settings-private.h"
 #include <gtk/gtk.h>
@@ -68,6 +69,9 @@ struct _AdwStyleManager
   GtkCssProvider *provider;
   GtkCssProvider *accent_provider;
   GtkCssProvider *fonts_provider;
+  GtkCssProvider *live_provider;
+
+  AdwLiveAppearance *live;
 
   AdwColorScheme color_scheme;
   gboolean dark;
@@ -244,6 +248,12 @@ update_stylesheet (AdwStyleManager       *self,
     g_free (accent_css);
   }
 
+  if (flags & UPDATE_ACCENT_COLOR && self->live_provider) {
+    const char *live_css = adw_live_appearance_get_css (self->live);
+
+    gtk_css_provider_load_from_string (self->live_provider, live_css ? live_css : "");
+  }
+
   if (flags & UPDATE_FONTS && self->fonts_provider) {
     char *fonts_css = generate_fonts_css (self);
     gtk_css_provider_load_from_string (self->fonts_provider, fonts_css);
@@ -261,6 +271,9 @@ update_stylesheet (AdwStyleManager       *self,
     if (self->provider)
       g_object_set (self->provider, "prefers-color-scheme", color_scheme, NULL);
 
+    if (self->live_provider)
+      g_object_set (self->live_provider, "prefers-color-scheme", color_scheme, NULL);
+
     g_object_set (self->gtk_settings,
                   "gtk-interface-color-scheme", color_scheme,
                   NULL);
@@ -277,6 +290,9 @@ update_stylesheet (AdwStyleManager       *self,
 
     if (self->provider)
       g_object_set (self->provider, "prefers-contrast", contrast, NULL);
+
+    if (self->live_provider)
+      g_object_set (self->live_provider, "prefers-contrast", contrast, NULL);
 
     g_object_set (self->gtk_settings,
                   "gtk-interface-contrast", contrast,
@@ -442,6 +458,14 @@ notify_high_contrast_cb (AdwStyleManager *self)
 }
 
 static void
+live_appearance_changed_cb (AdwStyleManager *self)
+{
+  update_stylesheet (self, UPDATE_ACCENT_COLOR);
+
+  g_object_notify_by_pspec (G_OBJECT (self), props[PROP_ACCENT_COLOR_RGBA]);
+}
+
+static void
 adw_style_manager_constructed (GObject *object)
 {
   AdwStyleManager *self = ADW_STYLE_MANAGER (object);
@@ -470,6 +494,13 @@ adw_style_manager_constructed (GObject *object)
       gtk_style_context_add_provider_for_display (self->display,
                                                   GTK_STYLE_PROVIDER (self->fonts_provider),
                                                   GTK_STYLE_PROVIDER_PRIORITY_THEME);
+
+      /* Above the user gtk.css: it may hold a stale copy of the same
+       * colours (see adw-live-appearance.c). */
+      self->live_provider = gtk_css_provider_new ();
+      gtk_style_context_add_provider_for_display (self->display,
+                                                  GTK_STYLE_PROVIDER (self->live_provider),
+                                                  GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
     }
 
     self->animations_provider = gtk_css_provider_new ();
@@ -489,6 +520,13 @@ adw_style_manager_constructed (GObject *object)
                            G_CONNECT_SWAPPED);
 
   self->settings = adw_settings_get_default ();
+  self->live = adw_live_appearance_get_default ();
+
+  g_signal_connect_object (self->live,
+                           "changed",
+                           G_CALLBACK (live_appearance_changed_cb),
+                           self,
+                           G_CONNECT_SWAPPED);
 
   g_signal_connect_object (self->settings,
                            "notify::system-supports-color-schemes",
@@ -546,6 +584,7 @@ adw_style_manager_dispose (GObject *object)
   g_clear_object (&self->animations_provider);
   g_clear_object (&self->accent_provider);
   g_clear_object (&self->fonts_provider);
+  g_clear_object (&self->live_provider);
   g_clear_pointer (&self->document_font_name, g_free);
   g_clear_pointer (&self->monospace_font_name, g_free);
 
@@ -1114,7 +1153,9 @@ adw_style_manager_get_accent_color (AdwStyleManager *self)
  * Gets the current system accent color as a `GdkRGBA`.
  *
  * Equivalent to calling [func@AccentColor.to_rgba] on the value of
- * [property@StyleManager:accent-color].
+ * [property@StyleManager:accent-color], unless the desktop publishes an exact
+ * accent through the `org.malaysia.appearance` portal namespace: then that
+ * color is returned.
  *
  * This is a background color. The matching foreground color is white.
  *
@@ -1129,6 +1170,9 @@ adw_style_manager_get_accent_color_rgba (AdwStyleManager *self)
   GdkRGBA rgba;
 
   g_return_val_if_fail (ADW_IS_STYLE_MANAGER (self), NULL);
+
+  if (adw_live_appearance_get_accent (self->live, &rgba))
+    return gdk_rgba_copy (&rgba);
 
   color = adw_style_manager_get_accent_color (self);
 

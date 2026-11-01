@@ -70,6 +70,7 @@ test_names = [
   'test-header-bar',
   'test-inline-view-switcher',
   'test-leaflet',
+  'test-live-appearance',
   'test-message-dialog',
   'test-multi-layout-view',
   'test-navigation-split-view',
