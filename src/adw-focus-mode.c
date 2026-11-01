@@ -17,6 +17,13 @@
  * window: its `AdwToolbarView`s hide their top bars and show them only while
  * the bar is down. Leaving fullscreen shows them again.
  *
+ * With version 2 of the global the window asks for an overlaid titlebar
+ * (`set_overlay`, MalaysiaDreams ADR 0054): the compositor no longer moves
+ * the window for the bar. The taken views then extend their content to the
+ * top edge for the whole fullscreen, and their top bars come in over the
+ * content, opaque, right below the bar (`bar_height`). With version 1 the
+ * window is moved down and the bars push the content as usual.
+ *
  * Without the global, or with ADW_DISABLE_FOCUS_MODE set, nothing changes.
  *
  * Which toolbar views: every `AdwToolbarView` rooted in the window, in the
@@ -76,6 +83,8 @@ typedef struct {
   gboolean active;
   gboolean fullscreen;
   gboolean bar_revealed;
+  /* The top bars go over the content, this far down; -1 without overlay */
+  int overlay_offset;
 
   gboolean applying;
   guint idle_id;
@@ -129,8 +138,10 @@ static void
 release_view (WindowState *state,
               ViewRecord  *record)
 {
-  if (record->taken && !record->app_owned)
+  if (record->taken && !record->app_owned) {
+    adw_toolbar_view_set_focus_overlay (record->view, -1);
     set_reveal (state, record->view, TRUE);
+  }
 
   record->taken = FALSE;
   record->app_owned = FALSE;
@@ -167,6 +178,8 @@ apply (WindowState *state)
       record->taken = TRUE;
     }
 
+    /* The offset first, so the bars come in at their place */
+    adw_toolbar_view_set_focus_overlay (record->view, state->overlay_offset);
     set_reveal (state, record->view, state->bar_revealed);
   }
 }
@@ -226,6 +239,7 @@ notify_reveal_top_bars_cb (AdwToolbarView *view,
 
   /* Not our change: the app drives this view now */
   if (record && record->taken) {
+    adw_toolbar_view_set_focus_overlay (view, -1);
     record->taken = FALSE;
     record->app_owned = TRUE;
   }
@@ -254,8 +268,20 @@ notice_bar_cb (void                             *data,
   queue_apply (state);
 }
 
+static void
+notice_bar_height_cb (void                             *data,
+                      struct infinity_focus_surface_v1 *notice,
+                      uint32_t                          height)
+{
+  WindowState *state = data;
+
+  /* Comes right before bar(1), which queues the update */
+  state->overlay_offset = (int) MIN (height, G_MAXINT);
+}
+
 static const struct infinity_focus_surface_v1_listener notice_listener = {
   notice_bar_cb,
+  notice_bar_height_cb,
 };
 
 static void
@@ -284,6 +310,13 @@ attach_notice (WindowState *state)
   infinity_focus_surface_v1_add_listener (state->notice, &notice_listener,
                                           state);
 
+  /* Version 2: the window stays put and the bars go over the content */
+  if (infinity_focus_surface_v1_get_version (state->notice) >=
+      INFINITY_FOCUS_SURFACE_V1_SET_OVERLAY_SINCE_VERSION) {
+    infinity_focus_surface_v1_set_overlay (state->notice);
+    state->overlay_offset = 0;
+  }
+
   state->active = TRUE;
   state->bar_revealed = FALSE;
   state->fullscreen = gtk_window_is_fullscreen (state->window);
@@ -299,6 +332,7 @@ detach_notice (WindowState *state,
 
   state->active = FALSE;
   state->bar_revealed = FALSE;
+  state->overlay_offset = -1;
 
   if (restore)
     apply (state);
@@ -319,7 +353,8 @@ registry_global_cb (void               *data,
     return;
 
   display->manager =
-    wl_registry_bind (registry, name, &infinity_focus_manager_v1_interface, 1);
+    wl_registry_bind (registry, name, &infinity_focus_manager_v1_interface,
+                      MIN (version, 2));
   display->manager_name = name;
 
   for (l = display->windows; l; l = l->next)
@@ -481,6 +516,7 @@ get_window_state (GtkWindow *window)
   state->window = window;
   state->views = g_ptr_array_new_with_free_func (g_free);
   state->fullscreen = gtk_window_is_fullscreen (window);
+  state->overlay_offset = -1;
 
   g_object_set_data_full (G_OBJECT (window), WINDOW_KEY, state,
                           window_state_free);
@@ -583,4 +619,13 @@ adw_focus_mode_set_state_for_testing (GtkWindow *window,
   state->bar_revealed = !!bar_revealed;
 
   apply (state);
+}
+
+void
+adw_focus_mode_set_overlay_for_testing (GtkWindow *window,
+                                        int        offset)
+{
+  g_return_if_fail (GTK_IS_WINDOW (window));
+
+  get_window_state (window)->overlay_offset = MAX (offset, -1);
 }

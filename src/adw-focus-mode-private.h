@@ -26,4 +26,9 @@ void adw_focus_mode_set_state_for_testing (GtkWindow *window,
                                            gboolean   fullscreen,
                                            gboolean   bar_revealed);
 
+/* Tests: act as if the compositor took the overlaid titlebar, with the bar
+ * this high (-1: version 1, no overlay). Applies on the next state. */
+void adw_focus_mode_set_overlay_for_testing (GtkWindow *window,
+                                             int        offset);
+
 G_END_DECLS

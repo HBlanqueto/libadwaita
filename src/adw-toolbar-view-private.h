@@ -16,4 +16,8 @@ G_BEGIN_DECLS
 
 gboolean adw_toolbar_view_has_top_bars (AdwToolbarView *self);
 
+void adw_toolbar_view_set_focus_overlay (AdwToolbarView *self,
+                                         int             offset);
+int  adw_toolbar_view_get_focus_overlay (AdwToolbarView *self);
+
 G_END_DECLS

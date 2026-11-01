@@ -7,6 +7,7 @@
 #include <adwaita.h>
 
 #include "adw-focus-mode-private.h"
+#include "adw-toolbar-view-private.h"
 
 typedef struct {
   GtkWindow *window;
@@ -230,6 +231,59 @@ test_no_top_bars (Fixture       *fixture,
   g_assert_true (revealed (view));
 }
 
+/* Version 2: the taken views keep their bars over the content, below the
+ * bar, for the whole fullscreen */
+static void
+test_overlay (Fixture       *fixture,
+              gconstpointer  data)
+{
+  adw_focus_mode_set_overlay_for_testing (fixture->window, 28);
+
+  set_state (fixture, TRUE, FALSE, FALSE);
+  g_assert_cmpint (adw_toolbar_view_get_focus_overlay (fixture->view), ==, -1);
+
+  set_state (fixture, TRUE, TRUE, FALSE);
+  g_assert_false (revealed (fixture->view));
+  g_assert_cmpint (adw_toolbar_view_get_focus_overlay (fixture->view), ==, 28);
+  g_assert_false (adw_toolbar_view_get_extend_content_to_top_edge (fixture->view));
+  g_assert_cmpint (adw_toolbar_view_get_top_bar_style (fixture->view), ==, ADW_TOOLBAR_FLAT);
+
+  set_state (fixture, TRUE, TRUE, TRUE);
+  g_assert_true (revealed (fixture->view));
+  g_assert_cmpint (adw_toolbar_view_get_focus_overlay (fixture->view), ==, 28);
+
+  set_state (fixture, TRUE, FALSE, FALSE);
+  g_assert_true (revealed (fixture->view));
+  g_assert_cmpint (adw_toolbar_view_get_focus_overlay (fixture->view), ==, -1);
+}
+
+/* Version 1: no overlay, the bars push the content as before */
+static void
+test_no_overlay (Fixture       *fixture,
+                 gconstpointer  data)
+{
+  set_state (fixture, TRUE, TRUE, TRUE);
+  g_assert_true (revealed (fixture->view));
+  g_assert_cmpint (adw_toolbar_view_get_focus_overlay (fixture->view), ==, -1);
+}
+
+/* An app taking a view over gets it back without the overlay */
+static void
+test_overlay_app_takes_over (Fixture       *fixture,
+                             gconstpointer  data)
+{
+  adw_focus_mode_set_overlay_for_testing (fixture->window, 28);
+
+  set_state (fixture, TRUE, TRUE, FALSE);
+  g_assert_cmpint (adw_toolbar_view_get_focus_overlay (fixture->view), ==, 28);
+
+  adw_toolbar_view_set_reveal_top_bars (fixture->view, TRUE);
+  g_assert_cmpint (adw_toolbar_view_get_focus_overlay (fixture->view), ==, -1);
+
+  set_state (fixture, TRUE, TRUE, TRUE);
+  g_assert_cmpint (adw_toolbar_view_get_focus_overlay (fixture->view), ==, -1);
+}
+
 /* ADW_DISABLE_FOCUS_MODE: views are never followed */
 static void
 test_disabled (void)
@@ -271,6 +325,9 @@ main (int   argc,
   ADD ("view_added", test_view_added);
   ADD ("nested", test_nested);
   ADD ("no_top_bars", test_no_top_bars);
+  ADD ("overlay", test_overlay);
+  ADD ("no_overlay", test_no_overlay);
+  ADD ("overlay_app_takes_over", test_overlay_app_takes_over);
 
 #undef ADD
 

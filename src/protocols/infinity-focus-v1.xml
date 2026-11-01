@@ -2,7 +2,7 @@
 <!--
   Copied verbatim (below this comment) from MalaysiaDreams' barrierkit:
   https://github.com/HBlanqueto/barrierkit, file
-  crates/infinity-protocol/protocols/infinity-focus-v1.xml, revision c8965c3.
+  crates/infinity-protocol/protocols/infinity-focus-v1.xml, revision 3841a09.
   It is MIT-licensed (notice in <copyright>); keep both copies in step.
 -->
 <protocol name="infinity_focus_v1">
@@ -29,17 +29,21 @@
     DEALINGS IN THE SOFTWARE.
   </copyright>
 
-  <interface name="infinity_focus_manager_v1" version="1">
+  <interface name="infinity_focus_manager_v1" version="2">
     <description summary="focus mode notices for applications">
       MalaysiaDreams focus mode (ADR 0051): a maximized window gets a space of
       its own and the xdg fullscreen state. In that space, the pointer at the
-      top edge brings the bar down; a client-decorated window is moved down
-      by the bar's height so its own titlebar stays visible under it.
+      top edge brings the bar down over the window.
 
       This global tells a client-decorated application when that happens, so
-      it can hide its window controls while in focus mode and show them with
-      the bar, as macOS does. It carries no geometry and grants nothing, so
-      every client may bind it.
+      it can show its titlebar or window controls only with the bar, as
+      macOS does. It grants nothing, so every client may bind it.
+
+      With version 1 objects, or without set_overlay, the compositor moves a
+      client-decorated window down by the bar's height while the bar is down,
+      so its own titlebar stays visible under it. With set_overlay (version
+      2) the window stays put and the client draws its titlebar over its
+      content, below the bar (MalaysiaDreams ADR 0054).
     </description>
 
     <request name="destroy" type="destructor">
@@ -58,7 +62,7 @@
     </request>
   </interface>
 
-  <interface name="infinity_focus_surface_v1" version="1">
+  <interface name="infinity_focus_surface_v1" version="2">
     <description summary="focus mode notices for one toplevel"/>
 
     <request name="destroy" type="destructor">
@@ -68,12 +72,35 @@
     <event name="bar">
       <description summary="the bar came down or went up over the window">
         Sent while the toplevel is in focus mode (it has the xdg fullscreen
-        state). revealed is 1 when the bar is down over the window, which has
-        been moved down by the bar's height, and 0 when the bar is up again.
+        state). revealed is 1 when the bar is down over the window and 0 when
+        the bar is up again. Without set_overlay, the window has been moved
+        down by the bar's height while revealed is 1.
         A client shows its window controls only while revealed is 1. Leaving
         focus mode sends 0 if the bar was down.
+
+        After set_overlay the window is not moved: the client draws its
+        titlebar from the bar_height sent just before bar(1).
       </description>
       <arg name="revealed" type="uint"/>
+    </event>
+
+    <request name="set_overlay" since="2">
+      <description summary="the client draws its titlebar over its content">
+        Tells the compositor that, in focus mode, this client hides its
+        titlebar and, while the bar is down, draws it over its content right
+        below the bar. The compositor then never moves the window for the
+        bar. It applies from the next time the bar comes down and lasts for
+        the object's lifetime.
+      </description>
+    </request>
+
+    <event name="bar_height" since="2">
+      <description summary="how much of the window the bar covers">
+        Sent just before every bar(1) to a client that called set_overlay:
+        the height, in surface-local logical pixels, of the bar over the top
+        of the window. The titlebar goes right below it.
+      </description>
+      <arg name="height" type="uint"/>
     </event>
   </interface>
 </protocol>

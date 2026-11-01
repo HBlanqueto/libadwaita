@@ -188,7 +188,17 @@ struct _AdwToolbarView
 
   int top_bar_height;
   int bottom_bar_height;
+
+  /* MalaysiaDreams focus mode (adw-focus-mode.c): the top bars go over the
+   * content, this far from the top edge; -1 when off */
+  int focus_overlay;
 };
+
+static inline gboolean
+extends_to_top_edge (AdwToolbarView *self)
+{
+  return self->extend_content_to_top_edge || self->focus_overlay >= 0;
+}
 
 static void adw_toolbar_view_buildable_init (GtkBuildableIface *iface);
 
@@ -217,7 +227,7 @@ static void
 update_undershoots (AdwToolbarView *self)
 {
   if (self->top_bar_style == ADW_TOOLBAR_FLAT &&
-      !self->extend_content_to_top_edge &&
+      !extends_to_top_edge (self) &&
       gtk_widget_get_height (self->top_bar) > 0) {
     gtk_widget_add_css_class (GTK_WIDGET (self), "undershoot-top");
   } else {
@@ -287,7 +297,7 @@ adw_toolbar_view_measure (GtkWidget      *widget,
 
   if (self->content) {
     if (for_size < 0 || orientation == GTK_ORIENTATION_VERTICAL ||
-        (self->extend_content_to_top_edge && self->extend_content_to_bottom_edge)) {
+        (extends_to_top_edge (self) && self->extend_content_to_bottom_edge)) {
       gtk_widget_measure (self->content, orientation, for_size,
                           &content_min, &content_nat, NULL, NULL);
     } else {
@@ -301,7 +311,7 @@ adw_toolbar_view_measure (GtkWidget      *widget,
                           &bottom_min_height, &bottom_nat_height, NULL, NULL);
 
       for_size_min = for_size_nat = for_size;
-      if (!self->extend_content_to_top_edge) {
+      if (!extends_to_top_edge (self)) {
         for_size_min -= top_min_height;
         for_size_nat -= top_nat_height;
       }
@@ -329,10 +339,10 @@ adw_toolbar_view_measure (GtkWidget      *widget,
     int min = content_min;
     int nat = content_nat;
 
-    if (self->extend_content_to_top_edge && self->extend_content_to_bottom_edge) {
+    if (extends_to_top_edge (self) && self->extend_content_to_bottom_edge) {
       min = MAX (min, top_min + bottom_min);
       nat = MAX (nat, top_nat + bottom_nat);
-    } else if (self->extend_content_to_top_edge) {
+    } else if (extends_to_top_edge (self)) {
       min = MAX (min, top_min) + bottom_min;
       nat = MAX (nat, top_nat) + bottom_nat;
     } else if (self->extend_content_to_bottom_edge) {
@@ -375,7 +385,7 @@ adw_toolbar_view_size_allocate (GtkWidget *widget,
     gtk_widget_measure (self->content, GTK_ORIENTATION_VERTICAL, width,
                         &content_min, NULL, NULL, NULL);
 
-  if (self->extend_content_to_top_edge)
+  if (extends_to_top_edge (self))
     content_min -= top_min;
 
   if (self->extend_content_to_bottom_edge)
@@ -389,7 +399,7 @@ adw_toolbar_view_size_allocate (GtkWidget *widget,
   content_height = height;
   content_offset = 0;
 
-  if (!self->extend_content_to_top_edge) {
+  if (!extends_to_top_edge (self)) {
     content_height -= top_height;
     content_offset = top_height;
   }
@@ -407,7 +417,10 @@ adw_toolbar_view_size_allocate (GtkWidget *widget,
     g_object_notify_by_pspec (G_OBJECT (self), props[PROP_BOTTOM_BAR_HEIGHT]);
   }
 
-  gtk_widget_allocate (self->top_bar, width, top_height, -1, NULL);
+  gtk_widget_allocate (self->top_bar, width, top_height, -1,
+                       self->focus_overlay > 0 ?
+                         gsk_transform_translate (NULL, &GRAPHENE_POINT_INIT (0, self->focus_overlay)) :
+                         NULL);
   gtk_widget_allocate (self->bottom_bar, width, bottom_height, -1,
                        gsk_transform_translate (NULL, &GRAPHENE_POINT_INIT (0, height - bottom_height)));
 
@@ -749,6 +762,7 @@ adw_toolbar_view_init (AdwToolbarView *self)
 
   self->top_bar_style = ADW_TOOLBAR_FLAT;
   self->bottom_bar_style = ADW_TOOLBAR_FLAT;
+  self->focus_overlay = -1;
 
   gtk_widget_set_overflow (GTK_WIDGET (self), GTK_OVERFLOW_HIDDEN);
 
@@ -1029,7 +1043,9 @@ adw_toolbar_view_set_top_bar_style (AdwToolbarView  *self,
 
   switch (style) {
     case ADW_TOOLBAR_FLAT:
-      gtk_widget_remove_css_class (self->top_bar, "raised");
+      /* Over the content, the bars stay opaque */
+      if (self->focus_overlay < 0)
+        gtk_widget_remove_css_class (self->top_bar, "raised");
       gtk_widget_remove_css_class (self->top_bar, "border");
       break;
     case ADW_TOOLBAR_RAISED:
@@ -1407,4 +1423,41 @@ adw_toolbar_view_has_top_bars (AdwToolbarView *self)
   }
 
   return FALSE;
+}
+
+/*
+ * Focus mode with an overlaid titlebar (adw-focus-mode.c): with @offset >= 0
+ * the content takes the whole height, as with extend-content-to-top-edge,
+ * and the top bars go over it, @offset pixels from the top edge, with an
+ * opaque background. -1 turns it off. Public properties don't change.
+ */
+void
+adw_toolbar_view_set_focus_overlay (AdwToolbarView *self,
+                                    int             offset)
+{
+  g_return_if_fail (ADW_IS_TOOLBAR_VIEW (self));
+
+  offset = MAX (offset, -1);
+
+  if (self->focus_overlay == offset)
+    return;
+
+  self->focus_overlay = offset;
+
+  if (self->top_bar_style == ADW_TOOLBAR_FLAT) {
+    if (offset >= 0)
+      gtk_widget_add_css_class (self->top_bar, "raised");
+    else
+      gtk_widget_remove_css_class (self->top_bar, "raised");
+  }
+
+  gtk_widget_queue_resize (GTK_WIDGET (self));
+}
+
+int
+adw_toolbar_view_get_focus_overlay (AdwToolbarView *self)
+{
+  g_return_val_if_fail (ADW_IS_TOOLBAR_VIEW (self), -1);
+
+  return self->focus_overlay;
 }
