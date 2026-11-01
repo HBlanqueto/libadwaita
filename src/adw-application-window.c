@@ -14,6 +14,7 @@
 #include "adw-dialog-host-private.h"
 #include "adw-dialog-private.h"
 #include "adw-gizmo-private.h"
+#include "adw-global-menu-private.h"
 #include "adw-gtkbuilder-utils-private.h"
 #include "adw-main-private.h"
 #include "adw-widget-utils-private.h"
@@ -187,6 +188,15 @@ adw_application_window_set_property (GObject      *object,
 }
 
 static void
+adw_application_window_realize (GtkWidget *widget)
+{
+  /* GTK sends the menubar path while realizing, so export it first */
+  adw_global_menu_attach (GTK_WINDOW (widget));
+
+  GTK_WIDGET_CLASS (adw_application_window_parent_class)->realize (widget);
+}
+
+static void
 adw_application_window_class_init (AdwApplicationWindowClass *klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
@@ -195,6 +205,7 @@ adw_application_window_class_init (AdwApplicationWindowClass *klass)
   object_class->get_property = adw_application_window_get_property;
   object_class->set_property = adw_application_window_set_property;
   widget_class->size_allocate = adw_application_window_size_allocate;
+  widget_class->realize = adw_application_window_realize;
 
   /**
    * AdwApplicationWindow:content:

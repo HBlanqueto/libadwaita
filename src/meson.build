@@ -304,6 +304,7 @@ libadwaita_private_sources += files([
   'adw-fading-label.c',
   'adw-floating-sheet.c',
   'adw-gizmo.c',
+  'adw-global-menu.c',
   'adw-gtkbuilder-utils.c',
   'adw-indicator-bin.c',
   'adw-inspector-page.c',
